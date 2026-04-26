@@ -1,0 +1,41 @@
+{
+  "yolink": {
+    "uaid": "ua_FDF1E6220AB24F65ACEE210952DE6886",
+    "secretKey": "sec_v1_0p3y4o1cdJU8VJT0bwrXFg==",
+    "apiHost": "https://api.yosmart.com",
+    "tokenEndpoint": "/open/yolink/token",
+    "apiEndpoint": "/open/yolink/v2/api",
+    "deviceId": "d88b4c01000a5dfa",
+    "deviceToken": "27246CD0DAC144855DEC5EBA8606B979"
+  },
+  "billing": {
+    "ratePerThousandGallons": 7.71,
+    "rateTier": "Tier 2",
+    "rateEffectiveDate": "2026-05-01",
+    "rateNotes": "Madison Water Utility Tier 2 rate. Shed gallons are marginal on Tyler & Stacey's bill. No base charge split.",
+    "billingCycles": [
+      { "label": "H1", "startMonth": 1, "startDay": 1, "endMonth": 6, "endDay": 30 },
+      { "label": "H2", "startMonth": 7, "startDay": 1, "endMonth": 12, "endDay": 31 }
+    ]
+  },
+  "parties": {
+    "payer": {
+      "name": "Jake & Jen",
+      "property": "The Shed",
+      "address": "1634 Baker Ave (Shed), Madison, WI 53705"
+    },
+    "payee": {
+      "name": "Tyler & Stacey Novogoratz",
+      "address": "1634 Baker Ave, Madison, WI 53705"
+    }
+  },
+"email": {
+    "reviewRecipient": "YOUR_EMAIL_HERE",
+    "sendTo": "TYLER_STACEY_EMAIL_HERE",
+    "subject": "Shed Water Bill — {{period}}"
+  },
+  "supabase": {
+    "url": "https://rdfagdpztplllnibraxh.supabase.co",
+    "anonKey": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJkZmFnZHB6dHBsbGxuaWJyYXhoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY5ODM0NTgsImV4cCI6MjA5MjU1OTQ1OH0.8Sv9GNvKkDZ40A0KziEwcHuOnzsqCj3tj1fshNe4l2k"
+  }
+}

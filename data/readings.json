@@ -1,0 +1,52 @@
+[
+  {
+    "raw": 286285,
+    "unit": "L",
+    "gallons": 75628,
+    "dailyUsage": 2,
+    "battery": 4,
+    "timestamp": "2026-04-23T03:26:11.193Z",
+    "recordedAt": "2026-04-23T03:26:11.210Z"
+  },
+  {
+    "raw": 286541,
+    "unit": "L",
+    "gallons": 75696,
+    "dailyUsage": 0,
+    "battery": 4,
+    "timestamp": "2026-04-24T02:09:00.058Z",
+    "recordedAt": "2026-04-24T02:09:00.073Z"
+  },
+  {
+    "raw": 286541,
+    "stepFactor": 10,
+    "unit": "L",
+    "gallons": 7570,
+    "dailyUsage": 0,
+    "battery": 4,
+    "timestamp": "2026-04-24T02:20:49.561Z",
+    "recordedAt": "2026-04-24T02:20:49.576Z"
+  },
+  {
+    "raw": 286542,
+    "stepFactor": 10,
+    "unit": "L",
+    "gallons": 7570,
+    "dailyUsage": 1,
+    "battery": 4,
+    "timestamp": "2026-04-24T02:23:23.698Z",
+    "recordedAt": "2026-04-24T02:23:23.712Z"
+  },
+  {
+    "raw": 286542,
+    "stepFactor": 10,
+    "sourceUnit": "L",
+    "unit": "GAL",
+    "gallons": 7570,
+    "dailyUsage": 1,
+    "battery": 4,
+    "online": "N/A",
+    "timestamp": "2026-04-24T02:28:33.837Z",
+    "recordedAt": "2026-04-24T02:28:33.853Z"
+  }
+]
