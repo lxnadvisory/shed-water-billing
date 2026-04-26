@@ -1,0 +1,63 @@
+name: Daily Meter Reading
+
+on:
+  schedule:
+    # Runs at 6:00 AM Central Time (11:00 UTC during CDT, 12:00 UTC during CST)
+    - cron: '0 11 * * *'
+  workflow_dispatch: # Allow manual trigger from GitHub UI
+
+jobs:
+  read-meter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Write config.json from secrets
+        run: |
+          cat > config.json << 'EOF'
+          {
+            "yolink": {
+              "uaid": "${{ secrets.YOLINK_UAID }}",
+              "secretKey": "${{ secrets.YOLINK_SECRET_KEY }}",
+              "deviceId": "d88b4c01000a5dfa",
+              "deviceToken": "27246CD0DAC144855DEC5EBA8606B979"
+            },
+            "supabase": {
+              "url": "${{ secrets.SUPABASE_URL }}",
+              "anonKey": "${{ secrets.SUPABASE_ANON_KEY }}"
+            },
+            "billing": {
+              "ratePerThousandGal": 7.71,
+              "rateEffective": "2026-05-01",
+              "baseCharge": 0,
+              "cycles": {
+                "H1": { "start": "01-01", "end": "06-30" },
+                "H2": { "start": "07-01", "end": "12-31" }
+              }
+            },
+            "parties": {
+              "payer": "Jake & Jen",
+              "payee": "Tyler & Stacey Novogoratz",
+              "property": "1634 Baker Ave, Madison, WI 53705"
+            }
+          }
+          EOF
+
+      - name: Read meter and save to Supabase
+        run: npm run read-meter
+
+      - name: Log result
+        if: always()
+        run: echo "Meter reading completed at $(date -u '+%Y-%m-%d %H:%M UTC')"
