@@ -2,9 +2,8 @@ name: Daily Meter Reading
 
 on:
   schedule:
-    # Runs at 6:00 AM Central Time (11:00 UTC during CDT, 12:00 UTC during CST)
     - cron: '0 11 * * *'
-  workflow_dispatch: # Allow manual trigger from GitHub UI
+  workflow_dispatch:
 
 jobs:
   read-meter:
@@ -18,7 +17,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install dependencies
@@ -26,34 +25,42 @@ jobs:
 
       - name: Write config.json from secrets
         run: |
-          cat > config.json << 'EOF'
+          cat > config.json << 'ENDOFCONFIG'
           {
             "yolink": {
               "uaid": "${{ secrets.YOLINK_UAID }}",
               "secretKey": "${{ secrets.YOLINK_SECRET_KEY }}",
+              "apiHost": "https://api.yosmart.com",
+              "tokenEndpoint": "/open/yolink/token",
+              "apiEndpoint": "/open/yolink/v2/api",
               "deviceId": "d88b4c01000a5dfa",
               "deviceToken": "27246CD0DAC144855DEC5EBA8606B979"
+            },
+            "billing": {
+              "ratePerThousandGallons": 7.71,
+              "rateTier": "Tier 2",
+              "rateEffectiveDate": "2026-05-01",
+              "rateNotes": "Madison Water Utility Tier 2 rate.",
+              "billingCycles": [
+                { "label": "H1", "startMonth": 1, "startDay": 1, "endMonth": 6, "endDay": 30 },
+                { "label": "H2", "startMonth": 7, "startDay": 1, "endMonth": 12, "endDay": 31 }
+              ]
+            },
+            "parties": {
+              "payer": { "name": "Jake & Jen", "property": "The Shed", "address": "1634 Baker Ave (Shed), Madison, WI 53705" },
+              "payee": { "name": "Tyler & Stacey Novogoratz", "address": "1634 Baker Ave, Madison, WI 53705" }
+            },
+            "email": {
+              "reviewRecipient": "YOUR_EMAIL_HERE",
+              "sendTo": "TYLER_STACEY_EMAIL_HERE",
+              "subject": "Shed Water Bill {{period}}"
             },
             "supabase": {
               "url": "${{ secrets.SUPABASE_URL }}",
               "anonKey": "${{ secrets.SUPABASE_ANON_KEY }}"
-            },
-            "billing": {
-              "ratePerThousandGal": 7.71,
-              "rateEffective": "2026-05-01",
-              "baseCharge": 0,
-              "cycles": {
-                "H1": { "start": "01-01", "end": "06-30" },
-                "H2": { "start": "07-01", "end": "12-31" }
-              }
-            },
-            "parties": {
-              "payer": "Jake & Jen",
-              "payee": "Tyler & Stacey Novogoratz",
-              "property": "1634 Baker Ave, Madison, WI 53705"
             }
           }
-          EOF
+          ENDOFCONFIG
 
       - name: Read meter and save to Supabase
         run: npm run read-meter
