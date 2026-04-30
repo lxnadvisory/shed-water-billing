@@ -120,7 +120,7 @@ return {
     sourceUnit: unitLabel,
     unit: outputUnit,
     gallons: Math.round(gallons),
-    dailyUsage: state.dailyUsage,
+    dailyUsage: Math.round((state.dailyUsage / stepFactor) * 0.264172),
     battery: state.battery,
     online: state.online ?? state.state?.online ?? 'N/A',
     timestamp: new Date().toISOString(),
