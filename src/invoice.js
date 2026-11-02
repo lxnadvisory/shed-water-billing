@@ -1,5 +1,8 @@
 // src/invoice.js
-// Generates a professional PDF invoice for Shed water billing
+// Generates the PDF invoice for Shed water + sewer billing.
+//
+// Expects a bill from calculateSegmentedBill() in billing.js, which has one
+// line per rate period (bill.lines) plus water/sewer/total amounts.
 
 import PDFDocument from 'pdfkit';
 import { createWriteStream, mkdirSync, existsSync } from 'fs';
@@ -10,256 +13,215 @@ import config from '../config.json' with { type: 'json' };
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const INVOICES_DIR = join(__dirname, '..', 'invoices');
 
-/**
- * Format a date as "Month Day, Year"
- */
-function formatDate(dateStr) {
-  return new Date(dateStr).toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  });
+const SERVICE_LOCATION = 'The Shed, 1632 Baker Ave, Madison, WI 53705';
+const DASHBOARD_URL = 'shed-dashboard.vercel.app';
+
+const INK = '#1a1a1a';
+const MUTED = '#666666';
+const RULE = '#d0d0d0';
+const PANEL = '#f3f5f7';
+
+function fmtDate(d) {
+  return new Date(d).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
 }
 
-/**
- * Format currency
- */
-function formatCurrency(amount) {
-  return `$${amount.toFixed(2)}`;
+function fmtMoney(n) {
+  return '$' + n.toFixed(2);
+}
+
+function fmtGal(n) {
+  return Math.round(n).toLocaleString('en-US');
+}
+
+// $6.10 -> "$6.10", $5.422 -> "$5.422"
+function fmtRate(n) {
+  const three = Math.round(n * 1000) / 1000;
+  const decimals = Math.round(three * 100) === three * 100 ? 2 : 3;
+  return '$' + three.toFixed(decimals);
 }
 
 /**
  * Generate a PDF invoice and return the file path.
  */
 export async function generateInvoice(bill, cycleLabel) {
+  if (!bill.lines || bill.lines.length === 0) {
+    throw new Error('generateInvoice needs a segmented bill (bill.lines). Use calculateSegmentedBill() from billing.js.');
+  }
+
   if (!existsSync(INVOICES_DIR)) {
     mkdirSync(INVOICES_DIR, { recursive: true });
   }
 
-  const filename = `shed-water-invoice-${cycleLabel.replace(/\s+/g, '-').toLowerCase()}.pdf`;
-  const filepath = join(INVOICES_DIR, filename);
-
+  const slug = cycleLabel.replace(/\s+/g, '-');
+  const filepath = join(INVOICES_DIR, 'shed-water-invoice-' + slug.toLowerCase() + '.pdf');
+  const invoiceNumber = 'SWB-' + slug.toUpperCase();
+  const issued = fmtDate(new Date());
+  const lines = bill.lines;
+  const periodStart = lines[0].periodStart;
+  const periodEnd = lines[lines.length - 1].periodEnd;
   const { payer, payee } = config.parties;
 
-  return new Promise((resolve, reject) => {
+  return new Promise(function (resolve, reject) {
     const doc = new PDFDocument({
       size: 'LETTER',
-      margins: { top: 60, bottom: 60, left: 60, right: 60 },
+      margins: { top: 54, bottom: 54, left: 56, right: 56 },
+      info: { Title: 'Shed Water & Sewer Invoice ' + cycleLabel },
     });
-
     const stream = createWriteStream(filepath);
     doc.pipe(stream);
 
-    // ── Header ──
-    doc
-      .fontSize(24)
-      .font('Helvetica-Bold')
-      .text('WATER BILL', { align: 'left' });
+    const L = doc.page.margins.left;
+    const R = doc.page.width - doc.page.margins.right;
+    const W = R - L;
 
-    doc
-      .fontSize(10)
-      .font('Helvetica')
-      .fillColor('#666666')
-      .text('Shed Water Usage Invoice', { align: 'left' });
+    function rule(y, color, width) {
+      doc.moveTo(L, y).lineTo(R, y).strokeColor(color || RULE).lineWidth(width || 0.75).stroke();
+    }
 
-    doc.moveDown(0.5);
+    // ---- Header -----------------------------------------------------------
+    doc.font('Helvetica-Bold').fontSize(20).fillColor(INK)
+      .text('Shed Water & Sewer Invoice', L, 54, { width: W * 0.6 });
+    doc.font('Helvetica').fontSize(9.5).fillColor(MUTED)
+      .text(cycleLabel + '  |  ' + fmtDate(periodStart) + ' – ' + fmtDate(periodEnd), L, doc.y + 3, { width: W * 0.6 });
 
-    // Invoice metadata — right-aligned block
-    const invoiceDate = new Date().toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-    });
-    const invoiceNumber = `SWB-${cycleLabel.replace(/\s+/g, '-').toUpperCase()}`;
-
-    doc
-      .fontSize(10)
-      .fillColor('#333333')
-      .font('Helvetica-Bold')
-      .text(`Invoice #: ${invoiceNumber}`, 60, doc.y, { align: 'right' })
-      .font('Helvetica')
-      .text(`Date: ${invoiceDate}`, { align: 'right' })
-      .text(`Period: ${cycleLabel}`, { align: 'right' });
-
-    doc.moveDown(1.5);
-
-    // ── Parties ──
-    const partiesY = doc.y;
-
-    // From (Payee — who gets paid)
-    doc
-      .fontSize(9)
-      .fillColor('#999999')
-      .font('Helvetica-Bold')
-      .text('BILL TO:', 60, partiesY);
-
-    doc
-      .fontSize(11)
-      .fillColor('#333333')
-      .font('Helvetica-Bold')
-      .text(payer.name, 60, partiesY + 16)
-      .font('Helvetica')
-      .fontSize(10)
-      .text(payer.property)
-      .text(payer.address);
-
-    // Payee
-    doc
-      .fontSize(9)
-      .fillColor('#999999')
-      .font('Helvetica-Bold')
-      .text('FROM:', 350, partiesY);
-
-    doc
-      .fontSize(11)
-      .fillColor('#333333')
-      .font('Helvetica-Bold')
-      .text(payee.name, 350, partiesY + 16)
-      .font('Helvetica')
-      .fontSize(10)
-      .text(payee.address);
-
-    doc.y = Math.max(doc.y, partiesY + 80);
-    doc.moveDown(1.5);
-
-    // ── Divider ──
-    doc
-      .strokeColor('#DDDDDD')
-      .lineWidth(1)
-      .moveTo(60, doc.y)
-      .lineTo(552, doc.y)
-      .stroke();
-
-    doc.moveDown(1);
-
-    // ── Meter Readings ──
-    doc
-      .fontSize(12)
-      .font('Helvetica-Bold')
-      .fillColor('#333333')
-      .text('Meter Readings');
-
-    doc.moveDown(0.5);
-
-    const readingsData = [
-      ['Start of Period', formatDate(bill.startDate), `${bill.startReading.toLocaleString()} gal`],
-      ['End of Period', formatDate(bill.endDate), `${bill.endReading.toLocaleString()} gal`],
-      ['Total Usage', '', `${bill.gallonsUsed.toLocaleString()} gallons`],
+    const meta = [
+      ['Invoice', invoiceNumber],
+      ['Issued', issued],
+      ['Due', 'On receipt'],
     ];
-
-    const col1X = 60;
-    const col2X = 250;
-    const col3X = 420;
-
-    // Table header
-    doc
-      .fontSize(9)
-      .font('Helvetica-Bold')
-      .fillColor('#999999')
-      .text('DESCRIPTION', col1X, doc.y)
-      .text('DATE', col2X, doc.y - doc.currentLineHeight())
-      .text('READING', col3X, doc.y - doc.currentLineHeight(), { align: 'right', width: 132 });
-
-    doc.moveDown(0.5);
-
-    doc
-      .strokeColor('#EEEEEE')
-      .lineWidth(0.5)
-      .moveTo(60, doc.y)
-      .lineTo(552, doc.y)
-      .stroke();
-
-    doc.moveDown(0.3);
-
-    // Table rows
-    readingsData.forEach((row, i) => {
-      const isTotal = i === readingsData.length - 1;
-      const y = doc.y;
-
-      doc
-        .fontSize(10)
-        .font(isTotal ? 'Helvetica-Bold' : 'Helvetica')
-        .fillColor('#333333')
-        .text(row[0], col1X, y)
-        .text(row[1], col2X, y)
-        .text(row[2], col3X, y, { align: 'right', width: 132 });
-
-      doc.moveDown(0.6);
+    const metaX = R - 190;
+    meta.forEach(function (m, i) {
+      const y = 56 + i * 14;
+      doc.font('Helvetica').fontSize(9).fillColor(MUTED).text(m[0], metaX, y, { width: 60 });
+      doc.font('Helvetica-Bold').fontSize(9).fillColor(INK).text(m[1], metaX + 60, y, { width: 130, align: 'right' });
     });
 
-    doc.moveDown(1);
+    let y = 112;
+    rule(y);
 
-    // ── Divider ──
-    doc
-      .strokeColor('#DDDDDD')
-      .lineWidth(1)
-      .moveTo(60, doc.y)
-      .lineTo(552, doc.y)
-      .stroke();
+    // ---- Parties ----------------------------------------------------------
+    y += 14;
+    const half = W / 2;
+    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(MUTED)
+      .text('BILLED TO', L, y)
+      .text('PAYABLE TO', L + half, y);
+    y += 12;
+    doc.font('Helvetica-Bold').fontSize(11).fillColor(INK)
+      .text(payer.name, L, y, { width: half - 12 })
+      .text(payee.name, L + half, y, { width: half - 12 });
+    y += 15;
+    doc.font('Helvetica').fontSize(9).fillColor(MUTED)
+      .text('Service: ' + SERVICE_LOCATION, L, y, { width: half - 12 })
+      .text(payee.address, L + half, y, { width: half - 12 });
+    y += 32;
 
-    doc.moveDown(1);
+    // ---- Meter summary panel ---------------------------------------------
+    const panelH = 48;
+    doc.rect(L, y, W, panelH).fillColor(PANEL).fill();
+    const cells = [
+      ['Start reading', fmtGal(bill.startReading) + ' gal', fmtDate(periodStart)],
+      ['End reading', fmtGal(bill.endReading) + ' gal', fmtDate(periodEnd)],
+      ['Shed usage', fmtGal(bill.gallonsUsed) + ' gal', 'YoLink meter YS5008-UC'],
+    ];
+    cells.forEach(function (c, i) {
+      const x = L + 14 + i * (W / 3);
+      doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(c[0].toUpperCase(), x, y + 8);
+      doc.font('Helvetica-Bold').fontSize(13).fillColor(INK).text(c[1], x, y + 19);
+      doc.font('Helvetica').fontSize(7.5).fillColor(MUTED).text(c[2], x, y + 35, { width: W / 3 - 20 });
+    });
+    y += panelH + 22;
 
-    // ── Charges ──
-    doc
-      .fontSize(12)
-      .font('Helvetica-Bold')
-      .fillColor('#333333')
-      .text('Charges');
+    // ---- Charges table ----------------------------------------------------
+    const cols = [
+      { label: 'Period', w: 0.31, align: 'left' },
+      { label: 'Gallons', w: 0.13, align: 'right' },
+      { label: 'Water', w: 0.19, align: 'right' },
+      { label: 'Sewer', w: 0.19, align: 'right' },
+      { label: 'Amount', w: 0.18, align: 'right' },
+    ];
+    const xs = [];
+    let cx = L;
+    cols.forEach(function (c) { xs.push(cx); cx += c.w * W; });
 
-    doc.moveDown(0.5);
+    function cell(text, i, yy) {
+      const pad = i === cols.length - 1 ? 0 : 10;
+      doc.text(text, xs[i], yy, { width: cols[i].w * W - pad, align: cols[i].align, lineBreak: false });
+    }
 
-    const chargeY = doc.y;
-    doc
-      .fontSize(10)
-      .font('Helvetica')
-      .fillColor('#333333')
-      .text(
-        `${bill.gallonsUsed.toLocaleString()} gallons × ${formatCurrency(bill.ratePerThousandGallons)}/1,000 gal (${bill.rateTier})`,
-        col1X,
-        chargeY
-      )
-      .font('Helvetica-Bold')
-      .text(formatCurrency(bill.totalDue), col3X, chargeY, { align: 'right', width: 132 });
+    doc.font('Helvetica-Bold').fontSize(7.5).fillColor(MUTED);
+    cols.forEach(function (c, i) { cell(c.label.toUpperCase(), i, y); });
+    y += 13;
+    rule(y, INK, 0.75);
+    y += 9;
 
-    doc.moveDown(2);
+    lines.forEach(function (line) {
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(INK);
+      cell(fmtDate(line.periodStart) + ' – ' + fmtDate(line.periodEnd), 0, y);
+      cell(fmtGal(line.gallons), 1, y);
+      cell(fmtMoney(line.water), 2, y);
+      cell(fmtMoney(line.sewer), 3, y);
+      cell(fmtMoney(line.subtotal), 4, y);
+      y += 14;
+      doc.font('Helvetica').fontSize(8).fillColor(MUTED);
+      cell('Meter ' + fmtGal(line.startReading) + ' to ' + fmtGal(line.endReading), 0, y);
+      cell(fmtRate(line.waterRate) + ' / 1k gal', 2, y);
+      cell(fmtRate(line.sewerRate) + ' / 1k gal', 3, y);
+      y += 16;
+      rule(y);
+      y += 9;
+    });
 
-    // ── Total ──
-    doc
-      .strokeColor('#333333')
-      .lineWidth(2)
-      .moveTo(350, doc.y)
-      .lineTo(552, doc.y)
-      .stroke();
+    // ---- Totals -----------------------------------------------------------
+    const labelX = xs[2];
+    const labelW = (cols[2].w + cols[3].w) * W - 10;
+    const valX = xs[4];
+    const valW = cols[4].w * W;
 
-    doc.moveDown(0.5);
+    function totalRow(label, value, strong) {
+      doc.font(strong ? 'Helvetica-Bold' : 'Helvetica').fontSize(strong ? 12 : 9.5).fillColor(INK);
+      doc.text(label, labelX, y, { width: labelW, align: 'right', lineBreak: false });
+      doc.text(value, valX, y, { width: valW, align: 'right', lineBreak: false });
+      y += strong ? 20 : 15;
+    }
 
-    const totalY = doc.y;
-    doc
-      .fontSize(14)
-      .font('Helvetica-Bold')
-      .fillColor('#333333')
-      .text('TOTAL DUE', 350, totalY)
-      .fontSize(18)
-      .text(formatCurrency(bill.totalDue), col3X, totalY - 2, { align: 'right', width: 132 });
+    totalRow('Water', fmtMoney(bill.waterTotal));
+    totalRow('Sewer', fmtMoney(bill.sewerTotal));
+    doc.moveTo(labelX + labelW - 60, y).lineTo(R, y).strokeColor(INK).lineWidth(1).stroke();
+    y += 7;
+    totalRow('Total due', fmtMoney(bill.totalDue), true);
 
-    doc.moveDown(3);
+    // ---- How this is calculated -----------------------------------------
+    y += 14;
+    doc.font('Helvetica-Bold').fontSize(9.5).fillColor(INK).text('How this is calculated', L, y);
+    y = doc.y + 5;
 
-    // ── Footer ──
-    doc
-      .fontSize(9)
-      .font('Helvetica')
-      .fillColor('#999999')
-      .text(
-        `Rate: Madison Water Utility ${bill.rateTier} — ${formatCurrency(bill.ratePerThousandGallons)} per 1,000 gallons`,
-        60
-      )
-      .text('Meter: YoLink FlowSmart Water Meter')
-      .text('Per water agreement filed with property deeds, January 2026');
+    const notes = [
+      'Usage comes from the Shed’s own water meter (YoLink YS5008-UC). Each period’s gallons are the difference between cumulative meter readings at its start and end.',
+      'Water is billed at Madison Water Utility’s Tier 2 rate. The Shed’s gallons are the last gallons on the 1634 Baker Ave bill, above the household’s 3,000-gallon Tier 1 allowance. The monthly base charge is not shared.',
+      'Sewer is billed because the city charges City Sewer Service and MMSD Treatment on every gallon through the water meter. The sewer rate shown is those two combined.',
+    ];
+    if (lines.length > 1) {
+      const changes = lines.slice(1).map(function (l) { return fmtDate(l.periodStart); }).join(' and ');
+      notes.push('Madison rates changed on ' + changes + ', so each rate period is billed separately at the rates in effect at the time.');
+    }
+    lines.forEach(function (l) {
+      notes.push(fmtDate(l.periodStart) + ' – ' + fmtDate(l.periodEnd) + ' rates per 1,000 gal: water ' + fmtRate(l.waterRate)
+        + ', city sewer ' + fmtRate(l.sewerCityRate) + ', MMSD treatment ' + fmtRate(l.sewerMmsdRate) + '.');
+    });
+    notes.push('Billed under Section 4 of the Water Line Easement (Dane County Doc #6076685), which provides for payment of expenses related to the Shed’s water usage on or about January 1 and July 1.');
 
-    // Finalize
+    notes.forEach(function (n) {
+      doc.font('Helvetica').fontSize(8.5).fillColor(MUTED).text('•', L, y, { width: 10 });
+      doc.text(n, L + 12, y, { width: W - 12, lineGap: 1 });
+      y = doc.y + 4;
+    });
+
+    // ---- Footer -----------------------------------------------------------
+    doc.font('Helvetica').fontSize(8).fillColor(MUTED)
+      .text('Daily usage and billing history: ' + DASHBOARD_URL, L, doc.page.height - 72, { width: W, align: 'center', lineBreak: false });
+
     doc.end();
-
-    stream.on('finish', () => resolve(filepath));
+    stream.on('finish', function () { resolve(filepath); });
     stream.on('error', reject);
   });
 }
