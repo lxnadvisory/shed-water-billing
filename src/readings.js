@@ -99,6 +99,16 @@ export async function saveBilling(bill, cycleLabel, invoicePath = null) {
     status: 'draft',
   };
 
+  // Replace any earlier draft for this cycle so re-running the bill
+  // doesn't leave duplicate rows. Sent or paid records are never touched.
+  const { error: clearError } = await supabase
+    .from('billing')
+    .delete()
+    .eq('cycle_label', cycleLabel)
+    .eq('status', 'draft');
+
+  if (clearError) throw new Error('Failed to clear old draft: ' + clearError.message);
+
   const { data, error } = await supabase
     .from('billing')
     .insert(row)
