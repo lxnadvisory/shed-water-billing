@@ -92,5 +92,5 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .heartbeat
           git commit -m "heartbeat" || echo "nothing to commit"
-          git pull --rebase
+          git pull --rebase --autostash
           git push
