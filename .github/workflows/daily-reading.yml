@@ -9,6 +9,8 @@ jobs:
   read-meter:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repo
@@ -68,3 +70,27 @@ jobs:
       - name: Log result
         if: always()
         run: echo "Meter reading completed at $(date -u '+%Y-%m-%d %H:%M UTC')"
+
+      - name: Supabase keepalive pings
+        if: always()
+        run: |
+          for i in 1 2 3; do
+            curl -s -o /dev/null -w "%{http_code}\n" "$SUPABASE_URL/rest/v1/settings?select=id&limit=1" \
+              -H "apikey: $SUPABASE_ANON_KEY" \
+              -H "Authorization: Bearer $SUPABASE_ANON_KEY"
+            sleep 2
+          done
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Commit heartbeat (resets GitHub 60-day timer)
+        if: always()
+        run: |
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .heartbeat
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .heartbeat
+          git commit -m "heartbeat" || echo "nothing to commit"
+          git pull --rebase
+          git push
