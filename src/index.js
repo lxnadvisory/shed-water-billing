@@ -12,6 +12,7 @@
 import { getMeterReading } from './yolink.js';
 import { saveReading, getReadingNear, saveBilling } from './readings.js';
 import { getBillingCycle, getPreviousBillingCycle, calculateBill } from './billing.js';
+import { calculateSegmentedBill } from './billing.js';
 import { generateInvoice } from './invoice.js';
 import { mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
@@ -53,27 +54,22 @@ async function main() {
   console.log('   ' + cycle.startDate.toLocaleDateString() + ' - ' + cycle.endDate.toLocaleDateString());
   console.log('');
 
-  // Step 4: Find start/end readings for the cycle
-  const startReading = await getReadingNear(cycle.startDate);
-  const endReading = await getReadingNear(cycle.endDate);
+  // Step 4-5: Calculate the bill, split at any rate change within the cycle
+  const bill = await calculateSegmentedBill(cycle, getReadingNear);
 
-  if (!startReading || !endReading) {
-    console.error('Not enough readings to calculate a bill.');
-    console.error('   Need readings near the start and end of the billing period.');
-    console.error('   Run "npm run read-meter" periodically to build up history.');
-    process.exit(1);
-  }
-
-  console.log('   Start reading: ' + startReading.gallons.toLocaleString() + ' gal (' + startReading.timestamp + ')');
-  console.log('   End reading:   ' + endReading.gallons.toLocaleString() + ' gal (' + endReading.timestamp + ')');
+  console.log('   Start reading: ' + bill.startReading.toLocaleString() + ' gal (' + bill.startDate + ')');
+  console.log('   End reading:   ' + bill.endReading.toLocaleString() + ' gal (' + bill.endDate + ')');
   console.log('');
-
-  // Step 5: Calculate the bill
-  const bill = calculateBill(startReading, endReading);
-  console.log('Bill calculated:');
-  console.log('   Usage:    ' + bill.gallonsUsed.toLocaleString() + ' gallons');
-  console.log('   Rate:     $' + bill.ratePerThousandGallons + '/1,000 gal (' + bill.rateTier + ')');
-  console.log('   Total:    $' + bill.totalDue.toFixed(2));
+  console.log('Bill calculated (' + bill.rateTier + '):');
+  bill.lines.forEach(function (l) {
+    console.log('   ' + l.periodStart.toLocaleDateString() + ' - ' + l.periodEnd.toLocaleDateString() + ': '
+      + l.gallons.toLocaleString() + ' gal | water $' + l.water.toFixed(2) + ' @ $' + l.waterRate + '/1k'
+      + ' | sewer $' + l.sewer.toFixed(2) + ' @ $' + l.sewerRate + '/1k'
+      + ' | $' + l.subtotal.toFixed(2));
+  });
+  console.log('   Water total: $' + bill.waterTotal.toFixed(2));
+  console.log('   Sewer total: $' + bill.sewerTotal.toFixed(2));
+  console.log('   TOTAL DUE:   $' + bill.totalDue.toFixed(2));
   console.log('');
 
   // Step 6: Generate PDF invoice
