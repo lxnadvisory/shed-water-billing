@@ -12,7 +12,7 @@ import { createClient } from '@supabase/supabase-js';
 import { readFileSync } from 'fs';
 import config from '../config.json' with { type: 'json' };
 
-const supabase = createClient(config.supabase.url, config.supabase.anonKey);
+const supabase = createClient(config.supabase.url, config.supabase.serviceKey || config.supabase.anonKey);
 
 function parseTimestamp(timeStr) {
   // Format: "2026/01/11 00:00:00-0600"

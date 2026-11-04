@@ -5,7 +5,12 @@
 import { createClient } from '@supabase/supabase-js';
 import config from '../config.json' with { type: 'json' };
 
-const supabase = createClient(config.supabase.url, config.supabase.anonKey);
+// Writes need the private service key (config.supabase.serviceKey). The public
+// anon key is read-only once 02-lock-down-public-key.sql has been run.
+const supabase = createClient(
+  config.supabase.url,
+  config.supabase.serviceKey || config.supabase.anonKey
+);
 
 /**
  * Load all stored readings, ordered by timestamp descending.
@@ -82,32 +87,101 @@ export async function getReadingsInRange(startDate, endDate) {
 }
 
 /**
- * Save a billing record to Supabase.
+ * Load Madison rate periods (water Tier 2 + sewer) from Supabase.
+ * Returns null if the table isn't there yet, so callers can fall back to rates.js.
  */
-export async function saveBilling(bill, cycleLabel, invoicePath = null) {
+export async function loadRatePeriods() {
+  const { data, error } = await supabase
+    .from('rate_periods')
+    .select('effective_date, water_tier2, sewer_city, sewer_mmsd, source')
+    .order('effective_date', { ascending: true });
+
+  if (error || !data || data.length === 0) return null;
+  return data.map((r) => ({
+    effective: r.effective_date,
+    waterTier2: Number(r.water_tier2),
+    sewerCity: Number(r.sewer_city),
+    sewerMmsd: Number(r.sewer_mmsd),
+    source: r.source,
+  }));
+}
+
+function isoDate(d) {
+  const x = new Date(d);
+  const pad = (n) => String(n).padStart(2, '0');
+  return x.getFullYear() + '-' + pad(x.getMonth() + 1) + '-' + pad(x.getDate());
+}
+
+/**
+ * Upload the invoice PDF to the public "invoices" bucket and return its URL.
+ * Returns null (and warns) if the upload isn't possible, so billing still completes.
+ */
+export async function uploadInvoice(localPath, cycleLabel) {
+  try {
+    const { readFileSync } = await import('fs');
+    const key = 'shed-water-invoice-' + cycleLabel.replace(/\s+/g, '-').toLowerCase() + '.pdf';
+    const { error } = await supabase.storage
+      .from('invoices')
+      .upload(key, readFileSync(localPath), { contentType: 'application/pdf', upsert: true });
+    if (error) throw error;
+    return supabase.storage.from('invoices').getPublicUrl(key).data.publicUrl;
+  } catch (e) {
+    console.warn('   Invoice upload skipped: ' + (e.message || e));
+    return null;
+  }
+}
+
+/**
+ * Save a cycle's bill and its line items to Supabase.
+ *
+ * One row per cycle. Re-running the bill replaces a draft. A bill that has
+ * been sent or paid is locked: this refuses to change it, so the record
+ * always matches what Tyler and Stacey received.
+ */
+export async function saveBilling(bill, cycleLabel, invoicePath = null, invoiceUrl = null) {
+  const { data: existing, error: findError } = await supabase
+    .from('billing')
+    .select('id, status')
+    .eq('cycle_label', cycleLabel);
+
+  if (findError) throw new Error('Failed to look up existing bill: ' + findError.message);
+
+  const locked = (existing || []).find((b) => b.status && b.status !== 'draft');
+  if (locked) {
+    throw new Error(cycleLabel + ' is already marked ' + locked.status + ' and is locked. '
+      + 'Corrections go on the next bill as an adjustment.');
+  }
+
+  // Clear old drafts for this cycle (their lines go with them).
+  if (existing && existing.length > 0) {
+    const { error: clearError } = await supabase
+      .from('billing')
+      .delete()
+      .in('id', existing.map((b) => b.id))
+      .select('id');
+    if (clearError) throw new Error('Failed to clear old draft: ' + clearError.message);
+  }
+
+  const lines = bill.lines || [];
   const row = {
     cycle_label: cycleLabel,
-    start_reading: bill.startReading,
-    end_reading: bill.endReading,
+    start_reading: Math.round(bill.startReading),
+    end_reading: Math.round(bill.endReading),
     start_date: bill.startDate,
     end_date: bill.endDate,
-    gallons_used: bill.gallonsUsed,
+    period_start: lines.length ? isoDate(lines[0].periodStart) : null,
+    period_end: lines.length ? isoDate(lines[lines.length - 1].periodEnd) : null,
+    gallons_used: Math.round(bill.gallonsUsed),
     rate_per_thousand: bill.ratePerThousandGallons,
     rate_tier: bill.rateTier,
+    water_total: bill.waterTotal ?? null,
+    sewer_total: bill.sewerTotal ?? null,
     total_due: bill.totalDue,
+    invoice_number: 'SWB-' + cycleLabel.replace(/\s+/g, '-').toUpperCase(),
     invoice_path: invoicePath,
+    invoice_url: invoiceUrl,
     status: 'draft',
   };
-
-  // Replace any earlier draft for this cycle so re-running the bill
-  // doesn't leave duplicate rows. Sent or paid records are never touched.
-  const { error: clearError } = await supabase
-    .from('billing')
-    .delete()
-    .eq('cycle_label', cycleLabel)
-    .eq('status', 'draft');
-
-  if (clearError) throw new Error('Failed to clear old draft: ' + clearError.message);
 
   const { data, error } = await supabase
     .from('billing')
@@ -115,7 +189,34 @@ export async function saveBilling(bill, cycleLabel, invoicePath = null) {
     .select()
     .single();
 
-  if (error) throw new Error(`Failed to save billing: ${error.message}`);
+  if (error) {
+    if (/duplicate key/.test(error.message)) {
+      throw new Error('A bill for ' + cycleLabel + ' already exists and could not be replaced. '
+        + 'Add serviceKey to config.json (see SETUP-DASHBOARD.md).');
+    }
+    throw new Error(`Failed to save billing: ${error.message}`);
+  }
+
+  if (lines.length) {
+    const lineRows = lines.map((l, i) => ({
+      billing_id: data.id,
+      line_no: i + 1,
+      period_start: isoDate(l.periodStart),
+      period_end: isoDate(l.periodEnd),
+      start_reading: l.startReading,
+      end_reading: l.endReading,
+      gallons: l.gallons,
+      water_rate: l.waterRate,
+      sewer_city_rate: l.sewerCityRate,
+      sewer_mmsd_rate: l.sewerMmsdRate,
+      water_amount: l.water,
+      sewer_amount: l.sewer,
+      subtotal: l.subtotal,
+    }));
+    const { error: lineError } = await supabase.from('billing_lines').insert(lineRows);
+    if (lineError) throw new Error('Saved the bill but not its line items: ' + lineError.message);
+  }
+
   return data;
 }
 

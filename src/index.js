@@ -10,7 +10,7 @@
 //   6. (Future) Email to Jake for review
 
 import { getMeterReading } from './yolink.js';
-import { saveReading, getReadingNear, saveBilling } from './readings.js';
+import { saveReading, getReadingNear, saveBilling, loadRatePeriods, uploadInvoice } from './readings.js';
 import { getBillingCycle, getPreviousBillingCycle, calculateBill } from './billing.js';
 import { calculateSegmentedBill } from './billing.js';
 import { generateInvoice } from './invoice.js';
@@ -55,7 +55,9 @@ async function main() {
   console.log('');
 
   // Step 4-5: Calculate the bill, split at any rate change within the cycle
-  const bill = await calculateSegmentedBill(cycle, getReadingNear);
+  const dbRates = await loadRatePeriods();
+  console.log('   Rates: ' + (dbRates ? 'from Supabase rate_periods' : 'from src/rates.js (rate_periods table not found)'));
+  const bill = await calculateSegmentedBill(cycle, getReadingNear, dbRates || undefined);
 
   console.log('   Start reading: ' + bill.startReading.toLocaleString() + ' gal (' + bill.startDate + ')');
   console.log('   End reading:   ' + bill.endReading.toLocaleString() + ' gal (' + bill.endDate + ')');
@@ -79,7 +81,9 @@ async function main() {
   console.log('');
 
   // Step 7: Save billing record to Supabase
-  await saveBilling(bill, cycle.label, invoicePath);
+  const invoiceUrl = await uploadInvoice(invoicePath, cycle.label);
+  if (invoiceUrl) console.log('   Uploaded: ' + invoiceUrl);
+  await saveBilling(bill, cycle.label, invoicePath, invoiceUrl);
   console.log('Billing record saved to Supabase.');
   console.log('');
 

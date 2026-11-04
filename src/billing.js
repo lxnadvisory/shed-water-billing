@@ -101,8 +101,8 @@ function localDate(str) {
  * Split a billing cycle into segments, one per rate period it overlaps.
  * Returns [{ start, end, rates }] in date order.
  */
-export function getRateSegments(startDate, endDate) {
-  const periods = RATE_PERIODS
+export function getRateSegments(startDate, endDate, ratePeriods = RATE_PERIODS) {
+  const periods = ratePeriods
     .map(function (p) { return Object.assign({}, p, { start: localDate(p.effective) }); })
     .sort(function (a, b) { return a.start - b.start; });
 
@@ -139,8 +139,8 @@ export function getRateSegments(startDate, endDate) {
  * Line amounts are rounded to cents, and totals are the sum of the rounded lines
  * so the invoice always adds up.
  */
-export async function calculateSegmentedBill(cycle, readingNear) {
-  const segments = getRateSegments(cycle.startDate, cycle.endDate);
+export async function calculateSegmentedBill(cycle, readingNear, ratePeriods = RATE_PERIODS) {
+  const segments = getRateSegments(cycle.startDate, cycle.endDate, ratePeriods);
 
   // Reading points: cycle start, each internal rate change, cycle end.
   // Adjacent segments share a boundary reading so no gallon is counted twice.
