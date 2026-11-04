@@ -59,7 +59,8 @@ jobs:
             },
             "supabase": {
               "url": "${{ secrets.SUPABASE_URL }}",
-              "anonKey": "${{ secrets.SUPABASE_ANON_KEY }}"
+              "anonKey": "${{ secrets.SUPABASE_ANON_KEY }}",
+              "serviceKey": "${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}"
             }
           }
           ENDOFCONFIG
